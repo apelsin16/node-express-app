@@ -1,0 +1,1 @@
+export const uploadScalarDef = 'scalar Upload';

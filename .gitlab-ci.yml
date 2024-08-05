@@ -1,0 +1,63 @@
+image: node
+
+stages:
+  - build
+  - run
+
+variables:
+  APP_NAME: lectrum-ikysylenko
+  APP_VERSION: "1.0.0"
+  S3_BUCKET: "elasticbeanstalk-us-east-1-832064012496"
+  AWS_REGION: "us-east-1"
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+  AWS_PLATFORM: Docker
+  ENV_NAME: lectrum-ikysylenko-env
+  SSH_KEY: ${SSH_KEY}
+      
+create_app_version:
+  stage: build
+  image: python:latest
+  allow_failure: false
+  script: |
+    pip install awscli #Install awscli tools
+
+    apt-get update
+    
+    apt-get install zip unzip -y
+    
+    echo "Creating a new zip file"
+    zip -r ${APP_NAME}.zip . -x .env*
+
+    echo "Creating a new AWS Version Label"
+    AWS_VERSION_LABEL=${APP_NAME}-${APP_VERSION}-${CI_PIPELINE_ID}
+    S3_KEY="$AWS_VERSION_LABEL.zip"
+
+    echo "Uploading version to bucket"
+    aws s3 cp ${APP_NAME}.zip s3://${S3_BUCKET}/${S3_KEY} --region ${AWS_REGION}
+  
+    echo "Creating new app version"
+    aws elasticbeanstalk create-application-version \
+      --application-name ${APP_NAME} \
+      --version-label $AWS_VERSION_LABEL \
+      --region ${AWS_REGION} \
+      --source-bundle S3Bucket=${S3_BUCKET},S3Key=${S3_KEY} \
+      --description "${CI_COMMIT_DESCRIPTION}" \
+      --auto-create-application \
+  only:
+    refs:
+      - main
+
+deploy_app_version:
+  stage: run
+  image: coxauto/aws-ebcli
+  when: manual
+  script: |
+    AWS_VERSION_LABEL=${APP_NAME}-${APP_VERSION}-${CI_PIPELINE_ID}
+
+    echo "Deploying app"
+    eb init -i ${APP_NAME} -p ${AWS_PLATFORM} -k ${SSH_KEY} --region ${AWS_REGION}
+    eb deploy ${ENV_NAME} --version ${AWS_VERSION_LABEL} 
+  only:
+    refs:
+      - main
